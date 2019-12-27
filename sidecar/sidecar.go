@@ -5,6 +5,8 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+
+	"github.com/miun173/rebalance/sidecar/config"
 )
 
 // SideCar :nodoc:
@@ -19,7 +21,7 @@ func NewSideCar(balancerURL string) *SideCar {
 
 // Join joind load balancer cluster
 func (sc *SideCar) Join() error {
-	resp, err := http.Get(sc.balancerURL + "/rebalance/join")
+	resp, err := http.Get(sc.balancerURL + "/rebalance/join?port=" + config.ClientServicePort())
 	if err != nil {
 		return err
 	}

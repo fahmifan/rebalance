@@ -84,8 +84,10 @@ func (rr *RoundRobin) HandleJoin(w http.ResponseWriter, r *http.Request) {
 		log.Fatal(err)
 	}
 
-	log.Println("requst join from host ", ip.String())
-	if err := rr.AddServer("http://" + ip.String()); err != nil {
+	port := ":" + r.URL.Query().Get("port")
+
+	log.Println("requst join from host ", ip.String()+port)
+	if err := rr.AddServer("http://" + ip.String() + port); err != nil {
 		log.Println(err)
 		w.WriteHeader(http.StatusBadRequest)
 		resp, err := json.Marshal(map[string]interface{}{"error": err.Error()})
@@ -100,6 +102,7 @@ func (rr *RoundRobin) HandleJoin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("success join"))
 }
 
 // Handler :nodoc:
