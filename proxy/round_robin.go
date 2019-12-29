@@ -9,13 +9,15 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"sync/atomic"
 )
 
 // RoundRobin :nodoc:
 type RoundRobin struct {
 	urls    []*url.URL
+	proxies []*httputil.ReverseProxy
 	mapURL  map[string]string
-	nextURL int
+	nextURL uint64
 }
 
 // NewRoundRobin :nodoc:
@@ -41,20 +43,20 @@ func (rr *RoundRobin) AddServer(serverURL string) error {
 		return errors.New("server url already added")
 	}
 
-	parsed, err := url.Parse(serverURL)
+	taretURL, err := url.Parse(serverURL)
 	if err != nil {
 		return err
 	}
 
-	rr.urls = append(rr.urls, parsed)
+	rr.urls = append(rr.urls, taretURL)
 	rr.mapURL[serverURL] = serverURL
+	rr.proxies = append(rr.proxies, httputil.NewSingleHostReverseProxy(taretURL))
 
 	return nil
 }
 
 // Proxy :nodoc:
-func (rr *RoundRobin) Proxy(target *url.URL, wr http.ResponseWriter, req *http.Request) error {
-	proxy := httputil.NewSingleHostReverseProxy(target)
+func (rr *RoundRobin) Proxy(proxy *httputil.ReverseProxy, target *url.URL, wr http.ResponseWriter, req *http.Request) error {
 	req.URL.Host = target.Host
 	req.Header.Set("X-Forwarded-Host", req.Header.Get("Host"))
 	req.URL.Scheme = target.Scheme
@@ -63,8 +65,8 @@ func (rr *RoundRobin) Proxy(target *url.URL, wr http.ResponseWriter, req *http.R
 	return nil
 }
 
-// FromRequest extracts the user IP address from req, if present.
-func FromRequest(req *http.Request) (net.IP, error) {
+// getClientIP extracts the user IP address from req, if present.
+func getClientIP(req *http.Request) (net.IP, error) {
 	ip, _, err := net.SplitHostPort(req.RemoteAddr)
 	if err != nil {
 		return nil, fmt.Errorf("userip: %q is not IP:port", req.RemoteAddr)
@@ -79,7 +81,7 @@ func FromRequest(req *http.Request) (net.IP, error) {
 
 // HandleJoin :nodoc:
 func (rr *RoundRobin) HandleJoin(w http.ResponseWriter, r *http.Request) {
-	ip, err := FromRequest(r)
+	ip, err := getClientIP(r)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -112,10 +114,11 @@ func (rr *RoundRobin) Handler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rr.Proxy(rr.urls[rr.findNextURL()], w, r)
+	nextURL := rr.findNextURL()
+	rr.Proxy(rr.proxies[nextURL], rr.urls[nextURL], w, r)
 }
 
-func (rr *RoundRobin) findNextURL() int {
-	rr.nextURL = (rr.nextURL + 1) % len(rr.urls)
+func (rr *RoundRobin) findNextURL() uint64 {
+	atomic.StoreUint64(&rr.nextURL, atomic.AddUint64(&rr.nextURL, uint64(1))%uint64(len(rr.urls)))
 	return rr.nextURL
 }
