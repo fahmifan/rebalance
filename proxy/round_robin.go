@@ -10,6 +10,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"sync/atomic"
+	"time"
 )
 
 // RoundRobin :nodoc:
@@ -29,10 +30,11 @@ func NewRoundRobin() ReverseProxy {
 
 // Start round robin server :nodoc:
 func (rr *RoundRobin) Start() {
-	http.HandleFunc("/", rr.Handler)
-	http.HandleFunc("/rebalance/join", rr.HandleJoin)
+	m := &http.ServeMux{}
+	m.HandleFunc("/", rr.Handler)
+	m.HandleFunc("/rebalance/join", rr.HandleJoin)
 
-	if err := http.ListenAndServe(":9000", nil); err != nil {
+	if err := http.ListenAndServe(":9000", m); err != nil {
 		log.Fatal(err)
 	}
 }
@@ -50,7 +52,24 @@ func (rr *RoundRobin) AddServer(serverURL string) error {
 
 	rr.urls = append(rr.urls, taretURL)
 	rr.mapURL[serverURL] = serverURL
-	rr.proxies = append(rr.proxies, httputil.NewSingleHostReverseProxy(taretURL))
+
+	proxy := httputil.NewSingleHostReverseProxy(taretURL)
+	proxy.FlushInterval = -1
+	transport := &http.Transport{
+		Proxy: http.ProxyFromEnvironment,
+		DialContext: (&net.Dialer{
+			Timeout:   60 * time.Second,
+			KeepAlive: 60 * time.Second,
+			DualStack: true,
+		}).DialContext,
+		MaxIdleConns:          10000,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+	}
+	proxy.Transport = transport
+
+	rr.proxies = append(rr.proxies, proxy)
 
 	return nil
 }
@@ -119,6 +138,7 @@ func (rr *RoundRobin) Handler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (rr *RoundRobin) findNextURL() uint64 {
-	atomic.StoreUint64(&rr.nextURL, atomic.AddUint64(&rr.nextURL, uint64(1))%uint64(len(rr.urls)))
-	return rr.nextURL
+	next := atomic.AddUint64(&rr.nextURL, uint64(1)) % uint64(len(rr.urls))
+	atomic.StoreUint64(&rr.nextURL, next)
+	return next
 }
