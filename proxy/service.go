@@ -22,3 +22,18 @@ func NewService(p *httputil.ReverseProxy, u *url.URL) *Service {
 		isAlive: true,
 	}
 }
+
+// SetAlive :nodoc:
+func (s *Service) SetAlive(alive bool) {
+	s.mutex.Lock()
+	s.isAlive = alive
+	s.mutex.Unlock()
+}
+
+// IsAlive :nodoc:
+func (s *Service) IsAlive() (alive bool) {
+	s.mutex.Lock()
+	alive = s.isAlive
+	s.mutex.Unlock()
+	return
+}

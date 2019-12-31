@@ -24,46 +24,28 @@ const (
 	_MaxAttempt int = 3
 )
 
-// SetAlive :nodoc:
-func (s *Service) SetAlive(alive bool) {
-	s.mutex.Lock()
-	s.isAlive = alive
-	s.mutex.Unlock()
-}
-
-// IsAlive :nodoc:
-func (s *Service) IsAlive() (alive bool) {
-	s.mutex.Lock()
-	alive = s.isAlive
-	s.mutex.Unlock()
-	return
-}
-
-// ServicesPo :nodoc:
-type ServicesPo struct {
-	urls     []*url.URL
-	proxies  []*httputil.ReverseProxy
+// ServiceProxy :nodoc:
+type ServiceProxy struct {
 	mapURL   map[string]string
-	nextURL  uint64
 	services []*Service
 	current  uint64
 }
 
-// NewRoundRobin :nodoc:
-func NewRoundRobin() *ServicesPo {
-	return &ServicesPo{
+// NewServiceProxy :nodoc:
+func NewServiceProxy() *ServiceProxy {
+	return &ServiceProxy{
 		mapURL:   make(map[string]string),
 		services: make([]*Service, 0),
 	}
 }
 
 // NextIndex :nodoc:
-func (sp *ServicesPo) NextIndex() int {
-	return int(atomic.AddUint64(&sp.nextURL, uint64(1)) % uint64(len(sp.services)))
+func (sp *ServiceProxy) NextIndex() int {
+	return int(atomic.AddUint64(&sp.current, uint64(1)) % uint64(len(sp.services)))
 }
 
 // Start round robin server :nodoc:
-func (sp *ServicesPo) Start() {
+func (sp *ServiceProxy) Start() {
 	m := &http.ServeMux{}
 	m.HandleFunc("/", sp.Handler)
 	m.HandleFunc("/rebalance/join", sp.HandleJoin)
@@ -74,7 +56,7 @@ func (sp *ServicesPo) Start() {
 }
 
 // AddServer :nodoc:
-func (sp *ServicesPo) AddServer(targetURL string) error {
+func (sp *ServiceProxy) AddServer(targetURL string) error {
 	if _, ok := sp.mapURL[targetURL]; ok {
 		return errors.New("server url already added")
 	}
@@ -88,7 +70,6 @@ func (sp *ServicesPo) AddServer(targetURL string) error {
 		return errors.New("cannot dial service")
 	}
 
-	sp.urls = append(sp.urls, serviceURL)
 	sp.mapURL[targetURL] = targetURL
 
 	proxy := httputil.NewSingleHostReverseProxy(serviceURL)
@@ -127,7 +108,7 @@ func getClientIP(req *http.Request) (net.IP, error) {
 }
 
 // HandleJoin :nodoc:
-func (sp *ServicesPo) HandleJoin(w http.ResponseWriter, r *http.Request) {
+func (sp *ServiceProxy) HandleJoin(w http.ResponseWriter, r *http.Request) {
 	ip, err := getClientIP(r)
 	if err != nil {
 		log.Fatal(err)
@@ -155,7 +136,7 @@ func (sp *ServicesPo) HandleJoin(w http.ResponseWriter, r *http.Request) {
 }
 
 // FindNextService find next alive service
-func (sp *ServicesPo) FindNextService() *Service {
+func (sp *ServiceProxy) FindNextService() *Service {
 	if len(sp.services) == 0 {
 		return nil
 	}
@@ -181,7 +162,7 @@ func (sp *ServicesPo) FindNextService() *Service {
 }
 
 // Handler :nodoc:
-func (sp *ServicesPo) Handler(w http.ResponseWriter, r *http.Request) {
+func (sp *ServiceProxy) Handler(w http.ResponseWriter, r *http.Request) {
 	// if the same request routing for few attempts with different backends, increase the count
 	attempts := getRetryAttemptsFromCtx(r, _Attempts)
 	if attempts > 3 {
@@ -201,7 +182,7 @@ func (sp *ServicesPo) Handler(w http.ResponseWriter, r *http.Request) {
 }
 
 // ProxyHandler :nodoc:
-func (sp *ServicesPo) ProxyHandler(service *Service) func(w http.ResponseWriter, r *http.Request, err error) {
+func (sp *ServiceProxy) ProxyHandler(service *Service) func(w http.ResponseWriter, r *http.Request, err error) {
 	return func(w http.ResponseWriter, r *http.Request, err error) {
 		if err != nil {
 			log.Println(err)
@@ -236,7 +217,7 @@ func (sp *ServicesPo) ProxyHandler(service *Service) func(w http.ResponseWriter,
 
 // HealthCheck check services health status
 // mark service as alive if helathy
-func (sp *ServicesPo) HealthCheck() {
+func (sp *ServiceProxy) HealthCheck() {
 	for _, s := range sp.services {
 		status := "up"
 		alive := isServiceAlive(s.URL)
@@ -250,7 +231,7 @@ func (sp *ServicesPo) HealthCheck() {
 }
 
 // RunHealthCheck run HealthCheck every 20 second
-func (sp *ServicesPo) RunHealthCheck() {
+func (sp *ServiceProxy) RunHealthCheck() {
 	t := time.NewTicker(20 * time.Second)
 	for {
 		select {
@@ -262,9 +243,9 @@ func (sp *ServicesPo) RunHealthCheck() {
 	}
 }
 
-func (sp *ServicesPo) findNextURL() uint64 {
-	next := atomic.AddUint64(&sp.nextURL, uint64(1)) % uint64(len(sp.urls))
-	atomic.StoreUint64(&sp.nextURL, next)
+func (sp *ServiceProxy) findNextURL() uint64 {
+	next := atomic.AddUint64(&sp.current, uint64(1)) % uint64(len(sp.services))
+	atomic.StoreUint64(&sp.current, next)
 	return next
 }
 
