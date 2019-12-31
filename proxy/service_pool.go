@@ -26,9 +26,9 @@ const (
 
 // ServiceProxy :nodoc:
 type ServiceProxy struct {
-	mapURL   map[string]string
-	services []*Service
-	current  uint64
+	mapURL         map[string]string
+	services       []*Service
+	currentService uint64
 }
 
 // NewServiceProxy :nodoc:
@@ -41,7 +41,7 @@ func NewServiceProxy() *ServiceProxy {
 
 // NextIndex :nodoc:
 func (sp *ServiceProxy) NextIndex() int {
-	return int(atomic.AddUint64(&sp.current, uint64(1)) % uint64(len(sp.services)))
+	return int(atomic.AddUint64(&sp.currentService, uint64(1)) % uint64(len(sp.services)))
 }
 
 // Start round robin server :nodoc:
@@ -150,7 +150,7 @@ func (sp *ServiceProxy) FindNextService() *Service {
 		if sp.services[idx].IsAlive() {
 			isSameService := i == next
 			if !isSameService {
-				atomic.StoreUint64(&sp.current, uint64(idx))
+				atomic.StoreUint64(&sp.currentService, uint64(idx))
 			}
 
 			return sp.services[idx]
@@ -244,8 +244,8 @@ func (sp *ServiceProxy) RunHealthCheck() {
 }
 
 func (sp *ServiceProxy) findNextURL() uint64 {
-	next := atomic.AddUint64(&sp.current, uint64(1)) % uint64(len(sp.services))
-	atomic.StoreUint64(&sp.current, next)
+	next := atomic.AddUint64(&sp.currentService, uint64(1)) % uint64(len(sp.services))
+	atomic.StoreUint64(&sp.currentService, next)
 	return next
 }
 
