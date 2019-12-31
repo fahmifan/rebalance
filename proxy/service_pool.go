@@ -21,7 +21,7 @@ const (
 	_Retry    key = 1
 
 	_MaxRetries int = 3
-	_MaxAttemp  int = 3
+	_MaxAttempt int = 3
 )
 
 // SetAlive :nodoc:
