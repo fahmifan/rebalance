@@ -10,7 +10,28 @@ Experimentation on server load balancing using Round Robin algorithm with self j
 - [x] handle concurrent proxy requests
     - [reff](https://kasvith.github.io/posts/lets-create-a-simple-lb-go)
 
-# Benchmarks
+## Usages
+```
+Usage:
+   [command]
+
+Available Commands:
+  help        Help about any command
+  proxy       a reverse proxy
+  sidecar     a sidecar proxy
+
+Flags:
+  -h, --help   help for this command
+
+Use " [command] --help" for more information about a command.
+```
+
+## Build
+```
+make build
+```
+
+## Benchmarks
 `$ make bench package=proxy`
 ```
 goos: linux

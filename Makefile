@@ -11,7 +11,7 @@ run-sidecar:
 	@$(run_cmd) sidecar join --url $(url) --service-ports $(service-ports)
 
 build:
-	@go build -ldflags="-w -s" -o output/rebalance ./cmd/...
+	go build -ldflags="-w -s" -o output/rebalance ./cmd/...
 
 bench:
 	@cd proxy && $(bench_cmd)
