@@ -45,7 +45,6 @@ func NewServiceProxy() *ServiceProxy {
 
 // NextIndex :nodoc:
 func (sp *ServiceProxy) NextIndex() int {
-	// return int(atomic.AddUint64(&sp.currentService, uint64(1)) % uint64(len(sp.services)))
 	return sp.currentService % len(sp.services)
 }
 
@@ -153,11 +152,8 @@ func (sp *ServiceProxy) FindNextService() *Service {
 	for i := next; i < n; i++ {
 		idx := i % nservice
 		if sp.services[idx].IsAlive() {
-			if differentService := i != next; differentService {
-				sp.currentService = idx
-			}
-
-			return sp.services[idx]
+			sp.currentService++
+			return sp.services[next]
 		}
 	}
 
