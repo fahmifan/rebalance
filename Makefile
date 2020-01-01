@@ -15,3 +15,10 @@ build:
 
 bench:
 	@cd proxy && $(bench_cmd)
+
+changelog:
+ifdef version
+	@git-chglog --next-tag $(version) -o CHANGELOG.md
+else
+	@git-chglog -o CHANGELOG.md
+endif
