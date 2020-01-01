@@ -5,13 +5,17 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"net"
 	"net/http"
 	"net/http/httputil"
+	"net/http/pprof"
 	"net/url"
-	"sync/atomic"
 	"time"
+
+	// pprof
+	_ "net/http/pprof"
+
+	log "github.com/sirupsen/logrus"
 )
 
 type key int
@@ -28,7 +32,7 @@ const (
 type ServiceProxy struct {
 	mapURL         map[string]string
 	services       []*Service
-	currentService uint64
+	currentService int
 }
 
 // NewServiceProxy :nodoc:
@@ -41,7 +45,8 @@ func NewServiceProxy() *ServiceProxy {
 
 // NextIndex :nodoc:
 func (sp *ServiceProxy) NextIndex() int {
-	return int(atomic.AddUint64(&sp.currentService, uint64(1)) % uint64(len(sp.services)))
+	// return int(atomic.AddUint64(&sp.currentService, uint64(1)) % uint64(len(sp.services)))
+	return sp.currentService % len(sp.services)
 }
 
 // Start round robin server :nodoc:
@@ -49,6 +54,13 @@ func (sp *ServiceProxy) Start() {
 	m := &http.ServeMux{}
 	m.HandleFunc("/", sp.Handler)
 	m.HandleFunc("/rebalance/join", sp.HandleJoin)
+
+	// Register pprof handlers
+	m.HandleFunc("/debug/pprof/", pprof.Index)
+	m.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+	m.HandleFunc("/debug/pprof/profile", pprof.Profile)
+	m.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+	m.HandleFunc("/debug/pprof/trace", pprof.Trace)
 
 	if err := http.ListenAndServe(":9000", m); err != nil {
 		log.Fatal(err)
@@ -73,18 +85,11 @@ func (sp *ServiceProxy) AddServer(targetURL string) error {
 	sp.mapURL[targetURL] = targetURL
 
 	proxy := httputil.NewSingleHostReverseProxy(serviceURL)
-	proxy.FlushInterval = -1
 	transport := &http.Transport{
-		Proxy: http.ProxyFromEnvironment,
-		DialContext: (&net.Dialer{
-			Timeout:   60 * time.Second,
-			KeepAlive: 60 * time.Second,
-			DualStack: true,
-		}).DialContext,
-		MaxIdleConns:          10000,
-		IdleConnTimeout:       90 * time.Second,
-		TLSHandshakeTimeout:   10 * time.Second,
-		ExpectContinueTimeout: 1 * time.Second,
+		DisableCompression:  true,
+		DisableKeepAlives:   false,
+		MaxIdleConns:        100,
+		MaxIdleConnsPerHost: 100,
 	}
 	proxy.Transport = transport
 
@@ -118,11 +123,11 @@ func (sp *ServiceProxy) HandleJoin(w http.ResponseWriter, r *http.Request) {
 
 	log.Println("requst join from host ", ip.String()+port)
 	if err := sp.AddServer("http://" + ip.String() + port); err != nil {
-		log.Println(err)
+		log.Error(err)
 		w.WriteHeader(http.StatusBadRequest)
 		resp, err := json.Marshal(map[string]interface{}{"error": err.Error()})
 		if err != nil {
-			log.Println(err)
+			log.Error(err)
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
@@ -148,13 +153,11 @@ func (sp *ServiceProxy) FindNextService() *Service {
 	for i := next; i < n; i++ {
 		idx := i % nservice
 		if sp.services[idx].IsAlive() {
-			isSameService := i == next
-			if !isSameService {
-				atomic.StoreUint64(&sp.currentService, uint64(idx))
+			if differentService := i != next; differentService {
+				sp.currentService = idx
 			}
 
 			return sp.services[idx]
-
 		}
 	}
 
@@ -177,15 +180,15 @@ func (sp *ServiceProxy) Handler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	service.Proxy.ErrorHandler = sp.ProxyErrorHandler(service)
 	service.Proxy.ServeHTTP(w, r)
-	service.Proxy.ErrorHandler = sp.ProxyHandler(service)
 }
 
-// ProxyHandler :nodoc:
-func (sp *ServiceProxy) ProxyHandler(service *Service) func(w http.ResponseWriter, r *http.Request, err error) {
+// ProxyErrorHandler :nodoc:
+func (sp *ServiceProxy) ProxyErrorHandler(service *Service) func(w http.ResponseWriter, r *http.Request, err error) {
 	return func(w http.ResponseWriter, r *http.Request, err error) {
 		if err != nil {
-			log.Println(err)
+			log.Error(err)
 		}
 
 		retries := getRetryAttemptsFromCtx(r, _Retry)
@@ -241,12 +244,6 @@ func (sp *ServiceProxy) RunHealthCheck() {
 			log.Println("Health check completed")
 		}
 	}
-}
-
-func (sp *ServiceProxy) findNextURL() uint64 {
-	next := atomic.AddUint64(&sp.currentService, uint64(1)) % uint64(len(sp.services))
-	atomic.StoreUint64(&sp.currentService, next)
-	return next
 }
 
 func getRetryAttemptsFromCtx(r *http.Request, retyAttempKey key) int {
