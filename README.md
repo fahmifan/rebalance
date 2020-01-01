@@ -1,4 +1,4 @@
-# Rebalance
+# Rebalance ![goreport](https://goreportcard.com/badge/github.com/miun173/rebalance)
 
 Experimentation on server load balancing using Round Robin algorithm with self join.
 
