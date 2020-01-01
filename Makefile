@@ -10,8 +10,8 @@ run-proxy:
 run-sidecar:
 	@$(run_cmd) sidecar join --url $(url) --service-ports $(service-ports)
 
-build-proxy:
-	@go build -o output/rebalance-proxy ./cmd/proxy/
+build:
+	@go build -o output/rebalance ./cmd/...
 
 bench:
 	@cd proxy && $(bench_cmd)
