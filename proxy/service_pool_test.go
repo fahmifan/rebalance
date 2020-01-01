@@ -20,12 +20,28 @@ func TestHandler(t *testing.T) {
 		fmt.Fprint(w, "Hello, client 2")
 	}))
 
+	up3 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, "Hello, client 3")
+	}))
+
 	sp := NewServiceProxy()
 	sp.AddServer(up1.URL)
 	sp.AddServer(up2.URL)
+	sp.AddServer(up3.URL)
 
 	ts := httptest.NewServer(http.HandlerFunc(sp.Handler))
 	defer ts.Close()
+
+	for i := 1; i <= 3; i++ {
+		res, err := http.Get(ts.URL)
+		assert.NoError(t, err)
+
+		greeting, err := ioutil.ReadAll(res.Body)
+		res.Body.Close()
+		assert.NoError(t, err)
+
+		assert.Equal(t, fmt.Sprintf("Hello, client %d", i), string(greeting))
+	}
 
 	res, err := http.Get(ts.URL)
 	assert.NoError(t, err)
@@ -35,15 +51,6 @@ func TestHandler(t *testing.T) {
 	assert.NoError(t, err)
 
 	assert.Equal(t, "Hello, client 1", string(greeting))
-
-	res, err = http.Get(ts.URL)
-	assert.NoError(t, err)
-
-	greeting, err = ioutil.ReadAll(res.Body)
-	res.Body.Close()
-	assert.NoError(t, err)
-
-	assert.Equal(t, "Hello, client 2", string(greeting))
 }
 
 func Benchmark4Upstream(b *testing.B) {

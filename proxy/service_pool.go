@@ -152,7 +152,7 @@ func (sp *ServiceProxy) FindNextService() *Service {
 	for i := next; i < n; i++ {
 		idx := i % nservice
 		if sp.services[idx].IsAlive() {
-			sp.currentService++
+			sp.currentService = (sp.currentService + 1) % nservice
 			return sp.services[next]
 		}
 	}
