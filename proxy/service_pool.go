@@ -43,11 +43,6 @@ func NewServiceProxy() *ServiceProxy {
 	}
 }
 
-// NextIndex :nodoc:
-func (sp *ServiceProxy) NextIndex() int {
-	return sp.currentService % len(sp.services)
-}
-
 // Start round robin server :nodoc:
 func (sp *ServiceProxy) Start() {
 	m := &http.ServeMux{}
@@ -145,16 +140,18 @@ func (sp *ServiceProxy) FindNextService() *Service {
 		return nil
 	}
 
-	next := sp.NextIndex()
-	n := len(sp.services) + next
+	next := sp.currentService % len(sp.services)
 	nservice := len(sp.services)
-
-	for i := next; i < n; i++ {
+	// make itter to nservice+1 so when it reach `idx = nservice-1`,
+	// but the serivce of `idx` is not alive, it will go back to `idx = 0`
+	for i := next; i < nservice+1; i++ {
 		idx := i % nservice
-		if sp.services[idx].IsAlive() {
-			sp.currentService = (sp.currentService + 1) % nservice
-			return sp.services[next]
+		if !sp.services[idx].IsAlive() {
+			continue
 		}
+
+		sp.currentService = (idx + 1) % nservice
+		return sp.services[idx]
 	}
 
 	return nil
