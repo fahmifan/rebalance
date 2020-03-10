@@ -10,6 +10,9 @@ run-proxy:
 run-sidecar:
 	@$(run_cmd) sidecar join --url $(url) --service-ports $(service-ports)
 
+run-sidecar-config:
+	@$(run_cmd) sidecar join-config --url $(url) --service-hosts $(service-hosts)
+
 build:
 	go build -ldflags="-w -s" -o output/rebalance ./cmd/...
 

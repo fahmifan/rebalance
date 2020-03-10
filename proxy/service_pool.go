@@ -48,6 +48,7 @@ func (sp *ServiceProxy) Start() {
 	m := &http.ServeMux{}
 	m.HandleFunc("/", sp.Handler)
 	m.HandleFunc("/rebalance/join", sp.HandleJoin)
+	m.HandleFunc("/rebalance/joinconfig", sp.HandleJoinFromConfig)
 
 	// Register pprof handlers
 	m.HandleFunc("/debug/pprof/", pprof.Index)
@@ -117,6 +118,28 @@ func (sp *ServiceProxy) HandleJoin(w http.ResponseWriter, r *http.Request) {
 
 	log.Println("requst join from host ", ip.String()+port)
 	if err := sp.AddServer("http://" + ip.String() + port); err != nil {
+		log.Error(err)
+		w.WriteHeader(http.StatusBadRequest)
+		resp, err := json.Marshal(map[string]interface{}{"error": err.Error()})
+		if err != nil {
+			log.Error(err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
+		w.Write(resp)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("success join"))
+}
+
+// HandleJoinFromConfig :nodoc:
+func (sp *ServiceProxy) HandleJoinFromConfig(w http.ResponseWriter, r *http.Request) {
+	host := r.URL.Query().Get("host")
+	log.Println("requst join from host ", host)
+	if err := sp.AddServer("http://" + host); err != nil {
 		log.Error(err)
 		w.WriteHeader(http.StatusBadRequest)
 		resp, err := json.Marshal(map[string]interface{}{"error": err.Error()})

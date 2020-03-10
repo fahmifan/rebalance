@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"net/url"
 )
 
 // SideCar :nodoc:
@@ -16,6 +17,19 @@ type SideCar struct {
 // NewSideCar :nodoc:
 func NewSideCar(balancerURL string) *SideCar {
 	return &SideCar{balancerURL}
+}
+
+// JoinFromConfig :nodoc:
+func (sc *SideCar) JoinFromConfig(hosts ...string) error {
+	for _, host := range hosts {
+		query := url.Values{}
+		query.Add("host", host)
+		url := fmt.Sprintf("%s%s", sc.balancerURL+"/rebalance/joinconfig?", query.Encode())
+		if err := join(url); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Join joind load balancer cluster
