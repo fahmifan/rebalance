@@ -10,6 +10,7 @@ import (
 	"net/http/httputil"
 	"net/http/pprof"
 	"net/url"
+	"sync"
 	"time"
 
 	// pprof
@@ -33,6 +34,7 @@ type ServiceProxy struct {
 	mapURL         map[string]string
 	services       []*Service
 	currentService int
+	mutex          *sync.Mutex
 }
 
 // NewServiceProxy :nodoc:
@@ -40,6 +42,7 @@ func NewServiceProxy() *ServiceProxy {
 	return &ServiceProxy{
 		mapURL:   make(map[string]string),
 		services: make([]*Service, 0),
+		mutex:    &sync.Mutex{},
 	}
 }
 
@@ -76,7 +79,9 @@ func (sp *ServiceProxy) AddServer(targetURL string) error {
 		return errors.New("cannot dial service")
 	}
 
+	sp.mutex.Lock()
 	sp.mapURL[targetURL] = targetURL
+	sp.mutex.Unlock()
 
 	proxy := httputil.NewSingleHostReverseProxy(serviceURL)
 	transport := &http.Transport{
