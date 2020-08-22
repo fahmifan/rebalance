@@ -1,7 +1,9 @@
 package console
 
 import (
+	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"os/signal"
 	"syscall"
@@ -33,9 +35,43 @@ func runProxy(cmd *cobra.Command, args []string) {
 
 	signal.Notify(signalCh, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 
+	localJoinProxy(sp)
 	go sp.Start()
 	go sp.RunHealthCheck()
 
 	<-signalCh
 	log.Println("exiting...")
+}
+
+func localJoinProxy(sp *proxy.ServiceProxy, urls ...string) {
+	_, err := os.Stat("config.json")
+	if os.IsNotExist(err) {
+		log.Info("config.json not found. Skipping local join")
+		return
+	}
+
+	bt, err := ioutil.ReadFile("config.json")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	st := &struct {
+		Hosts []string `json:"hosts"`
+	}{}
+
+	err = json.Unmarshal(bt, st)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	log.Info("run local join")
+	for _, host := range st.Hosts {
+		err := sp.AddServer(host)
+		if err != nil {
+			log.Error(err)
+			continue
+		}
+
+		log.Infof("succes join %s", host)
+	}
 }
