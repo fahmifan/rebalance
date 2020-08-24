@@ -19,7 +19,7 @@ var (
 		Use:     "join",
 		Short:   "join a service into proxy",
 		Example: "join --url 'http://127.0.0.1:9000'",
-		Run:     runsideCarJoinProxy,
+		Run:     runSideCarJoinProxy,
 	}
 )
 
@@ -31,9 +31,9 @@ func init() {
 	rootCMD.AddCommand(sidecarCMD)
 }
 
-func runsideCarJoinProxy(cmd *cobra.Command, args []string) {
+func runSideCarJoinProxy(cmd *cobra.Command, args []string) {
 	url := cmd.Flag("url").Value.String()
-	servicePorts := cmd.Flag("servicePorts").Value.String()
+	servicePorts := cmd.Flag("service-ports").Value.String()
 
 	if url == "" {
 		log.Fatal(errors.New("url should be in form 'http://127.0.0.1:9000'"))
