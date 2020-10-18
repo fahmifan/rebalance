@@ -36,7 +36,7 @@ func runProxy(cmd *cobra.Command, args []string) {
 
 	localJoinProxy(sp)
 	go sp.Start()
-	go sp.RunHealthCheck()
+	go sp.RunHealthCheck(signalCh)
 
 	fmt.Println("starting loadbalancer at :9000")
 

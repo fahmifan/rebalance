@@ -10,6 +10,7 @@ import (
 	"net/http/httputil"
 	"net/http/pprof"
 	"net/url"
+	"os"
 	"sync"
 	"time"
 
@@ -31,18 +32,20 @@ const (
 
 // ServiceProxy :nodoc:
 type ServiceProxy struct {
-	mapURL         map[string]string
-	services       []*Service
-	currentService int
-	mutex          *sync.Mutex
+	mapURL            map[string]string
+	services          []*Service
+	currentService    int
+	addServerMut      *sync.RWMutex
+	currentServiceMut *sync.RWMutex
 }
 
 // NewServiceProxy :nodoc:
 func NewServiceProxy() *ServiceProxy {
 	return &ServiceProxy{
-		mapURL:   make(map[string]string),
-		services: make([]*Service, 0),
-		mutex:    &sync.Mutex{},
+		mapURL:            make(map[string]string),
+		services:          make([]*Service, 0),
+		addServerMut:      &sync.RWMutex{},
+		currentServiceMut: &sync.RWMutex{},
 	}
 }
 
@@ -64,6 +67,12 @@ func (sp *ServiceProxy) Start() {
 	}
 }
 
+func (sp *ServiceProxy) addTargetURL(targetURL string) {
+	sp.addServerMut.Lock()
+	sp.mapURL[targetURL] = targetURL
+	sp.addServerMut.Unlock()
+}
+
 // AddServer :nodoc:
 func (sp *ServiceProxy) AddServer(targetURL string) error {
 	if _, ok := sp.mapURL[targetURL]; ok {
@@ -79,9 +88,7 @@ func (sp *ServiceProxy) AddServer(targetURL string) error {
 		return errors.New("cannot dial service")
 	}
 
-	sp.mutex.Lock()
-	sp.mapURL[targetURL] = targetURL
-	sp.mutex.Unlock()
+	sp.addTargetURL(targetURL)
 
 	proxy := httputil.NewSingleHostReverseProxy(serviceURL)
 	transport := &http.Transport{
@@ -139,6 +146,12 @@ func (sp *ServiceProxy) HandleJoin(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("success join"))
 }
 
+func (sp *ServiceProxy) setCurrentService(val int) {
+	sp.currentServiceMut.Lock()
+	sp.currentService = val
+	sp.currentServiceMut.Unlock()
+}
+
 // FindNextService find next alive service
 func (sp *ServiceProxy) FindNextService() *Service {
 	if len(sp.services) == 0 {
@@ -155,10 +168,13 @@ func (sp *ServiceProxy) FindNextService() *Service {
 			continue
 		}
 
-		sp.currentService = (idx + 1) % nservice
+		currentService := (idx + 1) % nservice
+		sp.setCurrentService(currentService)
+
 		return sp.services[idx]
 	}
 
+	// no service found
 	return nil
 }
 
@@ -167,8 +183,8 @@ func (sp *ServiceProxy) Handler(w http.ResponseWriter, r *http.Request) {
 	// if the same request routing for few attempts with different backends, increase the count
 	attempts := getRetryAttemptsFromCtx(r, _Attempts)
 	if attempts > 3 {
-		log.Printf("%s(%s) Max attempts reached, terminating\n", r.RemoteAddr, r.URL.Path)
-		http.Error(w, "Service not available", http.StatusServiceUnavailable)
+		log.Infof("%s(%s) max attempts reached, terminating\n", r.RemoteAddr, r.URL.Path)
+		http.Error(w, "service not available", http.StatusServiceUnavailable)
 		return
 	}
 
@@ -204,7 +220,7 @@ func (sp *ServiceProxy) ProxyErrorHandler(service *Service) func(w http.Response
 
 		// if the same request routing for few attempts with different backends, increase the count
 		attempts := getRetryAttemptsFromCtx(r, _Attempts)
-		log.Printf("%s(%s) attempting retry %d\n", r.RemoteAddr, r.URL.Path, attempts)
+		log.Infof("%s(%s) attempting retry %d\n", r.RemoteAddr, r.URL.Path, attempts)
 		service := sp.FindNextService()
 		if service == nil {
 			http.Error(w, "service not available", http.StatusInternalServerError)
@@ -227,12 +243,12 @@ func (sp *ServiceProxy) HealthCheck() {
 			status = "down"
 		}
 
-		log.Printf("%s [%s]\n", s.URL, status)
+		log.Infof("%s [%s]\n", s.URL, status)
 	}
 }
 
 // RunHealthCheck run HealthCheck every 20 second
-func (sp *ServiceProxy) RunHealthCheck() {
+func (sp *ServiceProxy) RunHealthCheck(sigInterrupt chan os.Signal) {
 	t := time.NewTicker(20 * time.Second)
 	for {
 		select {
@@ -240,6 +256,9 @@ func (sp *ServiceProxy) RunHealthCheck() {
 			log.Println("Starting health check...")
 			sp.HealthCheck()
 			log.Println("Health check completed")
+		case <-sigInterrupt:
+			t.Stop()
+			break
 		}
 	}
 }

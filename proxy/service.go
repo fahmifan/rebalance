@@ -11,7 +11,7 @@ type Service struct {
 	Proxy   *httputil.ReverseProxy
 	URL     *url.URL
 	isAlive bool
-	mutex   sync.RWMutex
+	mutex   *sync.RWMutex
 }
 
 // NewService :nodoc:
@@ -20,6 +20,7 @@ func NewService(p *httputil.ReverseProxy, u *url.URL) *Service {
 		Proxy:   p,
 		URL:     u,
 		isAlive: true,
+		mutex:   &sync.RWMutex{},
 	}
 }
 
@@ -32,8 +33,5 @@ func (s *Service) SetAlive(alive bool) {
 
 // IsAlive :nodoc:
 func (s *Service) IsAlive() (alive bool) {
-	s.mutex.Lock()
-	alive = s.isAlive
-	s.mutex.Unlock()
-	return
+	return s.isAlive
 }
