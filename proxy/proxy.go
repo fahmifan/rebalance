@@ -26,8 +26,8 @@ const (
 	_MaxAttempt int = 3
 )
 
-// ServiceProxy :nodoc:
-type ServiceProxy struct {
+// Proxy :nodoc:
+type Proxy struct {
 	server *http.Server
 
 	servicesMut *sync.RWMutex
@@ -41,8 +41,8 @@ type ServiceProxy struct {
 }
 
 // NewServiceProxy ServiceProxy factory
-func NewServiceProxy() *ServiceProxy {
-	return &ServiceProxy{
+func NewServiceProxy() *Proxy {
+	return &Proxy{
 		services:          make([]*Service, 0),
 		mapURL:            make(map[string]string),
 		mapURLMut:         &sync.RWMutex{},
@@ -52,7 +52,7 @@ func NewServiceProxy() *ServiceProxy {
 }
 
 // Start round robin server :nodoc:
-func (sp *ServiceProxy) Start() {
+func (sp *Proxy) Start() {
 	m := &http.ServeMux{}
 	m.HandleFunc("/", sp.handleProxy)
 	m.HandleFunc("/rebalance/join", sp.handleJoin)
@@ -64,14 +64,14 @@ func (sp *ServiceProxy) Start() {
 }
 
 // Stop stop loadbalancer
-func (sp *ServiceProxy) Stop(ctx context.Context) {
+func (sp *Proxy) Stop(ctx context.Context) {
 	if err := sp.server.Shutdown(ctx); err != nil {
 		log.Error(err)
 	}
 }
 
 // AddService :nodoc:
-func (sp *ServiceProxy) AddService(targetURL string) error {
+func (sp *Proxy) AddService(targetURL string) error {
 	if _, ok := sp.mapURL[targetURL]; ok {
 		return errors.New("server url already added")
 	}
@@ -91,7 +91,7 @@ func (sp *ServiceProxy) AddService(targetURL string) error {
 }
 
 // RunHealthCheck run HealthCheck every 20 second
-func (sp *ServiceProxy) RunHealthCheck(sigInterrupt chan os.Signal) {
+func (sp *Proxy) RunHealthCheck(sigInterrupt chan os.Signal) {
 	t := time.NewTicker(20 * time.Second)
 	for {
 		select {
@@ -107,7 +107,7 @@ func (sp *ServiceProxy) RunHealthCheck(sigInterrupt chan os.Signal) {
 }
 
 // handleJoin :nodoc:
-func (sp *ServiceProxy) handleJoin(w http.ResponseWriter, r *http.Request) {
+func (sp *Proxy) handleJoin(w http.ResponseWriter, r *http.Request) {
 	ip, err := getClientIP(r)
 	if err != nil {
 		log.Fatal(err)
@@ -135,7 +135,7 @@ func (sp *ServiceProxy) handleJoin(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleProxy :nodoc:
-func (sp *ServiceProxy) handleProxy(w http.ResponseWriter, r *http.Request) {
+func (sp *Proxy) handleProxy(w http.ResponseWriter, r *http.Request) {
 	// if the same request routing for few attempts with different backends, increase the count
 	attempts := getRetryAttemptsFromCtx(r, _attemptsKey)
 	if attempts > 3 {
@@ -154,7 +154,7 @@ func (sp *ServiceProxy) handleProxy(w http.ResponseWriter, r *http.Request) {
 	service.Proxy.ServeHTTP(w, r)
 }
 
-func (sp *ServiceProxy) proxyErrorHandler(service *Service) func(w http.ResponseWriter, r *http.Request, err error) {
+func (sp *Proxy) proxyErrorHandler(service *Service) func(w http.ResponseWriter, r *http.Request, err error) {
 	return func(w http.ResponseWriter, r *http.Request, err error) {
 		if err != nil {
 			log.Error(err)
@@ -186,7 +186,7 @@ func (sp *ServiceProxy) proxyErrorHandler(service *Service) func(w http.Response
 }
 
 // findNextService find next alive service
-func (sp *ServiceProxy) findNextService() *Service {
+func (sp *Proxy) findNextService() *Service {
 	if len(sp.services) == 0 {
 		return nil
 	}
@@ -213,7 +213,7 @@ func (sp *ServiceProxy) findNextService() *Service {
 
 // checkHealth check services health status
 // mark service as alive if helathy
-func (sp *ServiceProxy) checkHealth() {
+func (sp *Proxy) checkHealth() {
 	for i := range sp.services {
 		alive := dial(sp.services[i].URL)
 		sp.services[i].SetAlive(alive)
@@ -226,19 +226,19 @@ func (sp *ServiceProxy) checkHealth() {
 	}
 }
 
-func (sp *ServiceProxy) setCurrentService(val int) {
+func (sp *Proxy) setCurrentService(val int) {
 	sp.currentServiceMut.Lock()
 	sp.currentService = val
 	sp.currentServiceMut.Unlock()
 }
 
-func (sp *ServiceProxy) addTargetURL(targetURL string) {
+func (sp *Proxy) addTargetURL(targetURL string) {
 	sp.mapURLMut.Lock()
 	sp.mapURL[targetURL] = targetURL
 	sp.mapURLMut.Unlock()
 }
 
-func (sp *ServiceProxy) addService(serviceURL *url.URL) {
+func (sp *Proxy) addService(serviceURL *url.URL) {
 	proxy := httputil.NewSingleHostReverseProxy(serviceURL)
 	proxy.Transport = &http.Transport{
 		DisableCompression:  true,

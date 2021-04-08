@@ -1,4 +1,4 @@
-package console
+package cli
 
 import (
 	"context"
@@ -48,7 +48,7 @@ func runProxy(cmd *cobra.Command, args []string) {
 	sp.Stop(ctx)
 }
 
-func localJoinProxy(sp *proxy.ServiceProxy, urls ...string) {
+func localJoinProxy(sp *proxy.Proxy, urls ...string) {
 	_, err := os.Stat("config.json")
 	if os.IsNotExist(err) {
 		log.Info("config.json not found. Skipping local join")
