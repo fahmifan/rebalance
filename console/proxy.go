@@ -1,12 +1,14 @@
 package console
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/miun173/rebalance/proxy"
 	log "github.com/sirupsen/logrus"
@@ -26,12 +28,10 @@ func init() {
 }
 
 func runProxy(cmd *cobra.Command, args []string) {
-
 	sp := proxy.NewServiceProxy()
 
 	signalCh := make(chan os.Signal, 1)
 	defer close(signalCh)
-
 	signal.Notify(signalCh, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 
 	localJoinProxy(sp)
@@ -39,9 +39,13 @@ func runProxy(cmd *cobra.Command, args []string) {
 	go sp.RunHealthCheck(signalCh)
 
 	fmt.Println("starting loadbalancer at :9000")
-
 	<-signalCh
-	log.Println("exiting...")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	log.Println("stopping server ...")
+	sp.Stop(ctx)
 }
 
 func localJoinProxy(sp *proxy.ServiceProxy, urls ...string) {
@@ -56,18 +60,18 @@ func localJoinProxy(sp *proxy.ServiceProxy, urls ...string) {
 		log.Fatal(err)
 	}
 
-	st := &struct {
+	st := struct {
 		Hosts []string `json:"hosts"`
 	}{}
 
-	err = json.Unmarshal(bt, st)
+	err = json.Unmarshal(bt, &st)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	log.Info("run local join")
 	for _, host := range st.Hosts {
-		err := sp.AddServer(host)
+		err := sp.AddService(host)
 		if err != nil {
 			log.Error(err)
 			continue

@@ -8,14 +8,10 @@ import (
 	"net"
 	"net/http"
 	"net/http/httputil"
-	"net/http/pprof"
 	"net/url"
 	"os"
 	"sync"
 	"time"
-
-	// pprof
-	_ "net/http/pprof"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -23,58 +19,59 @@ import (
 type key int
 
 const (
-	_Attempts key = 0
-	_Retry    key = 1
+	_attemptsKey key = 0
+	_retryKey    key = 1
 
-	_MaxRetries int = 3
+	_maxRetries int = 3
 	_MaxAttempt int = 3
 )
 
 // ServiceProxy :nodoc:
 type ServiceProxy struct {
-	mapURL            map[string]string
-	services          []*Service
-	currentService    int
-	addServerMut      *sync.RWMutex
+	server *http.Server
+
+	servicesMut *sync.RWMutex
+	services    []*Service
+
+	mapURLMut *sync.RWMutex
+	mapURL    map[string]string
+
 	currentServiceMut *sync.RWMutex
+	currentService    int
 }
 
-// NewServiceProxy :nodoc:
+// NewServiceProxy ServiceProxy factory
 func NewServiceProxy() *ServiceProxy {
 	return &ServiceProxy{
-		mapURL:            make(map[string]string),
 		services:          make([]*Service, 0),
-		addServerMut:      &sync.RWMutex{},
+		mapURL:            make(map[string]string),
+		mapURLMut:         &sync.RWMutex{},
 		currentServiceMut: &sync.RWMutex{},
+		servicesMut:       &sync.RWMutex{},
 	}
 }
 
 // Start round robin server :nodoc:
 func (sp *ServiceProxy) Start() {
 	m := &http.ServeMux{}
-	m.HandleFunc("/", sp.Handler)
-	m.HandleFunc("/rebalance/join", sp.HandleJoin)
+	m.HandleFunc("/", sp.handleProxy)
+	m.HandleFunc("/rebalance/join", sp.handleJoin)
 
-	// Register pprof handlers
-	m.HandleFunc("/debug/pprof/", pprof.Index)
-	m.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
-	m.HandleFunc("/debug/pprof/profile", pprof.Profile)
-	m.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
-	m.HandleFunc("/debug/pprof/trace", pprof.Trace)
-
-	if err := http.ListenAndServe(":9000", m); err != nil {
-		log.Fatal(err)
+	sp.server = &http.Server{Addr: ":9000", Handler: m}
+	if err := sp.server.ListenAndServe(); err != nil {
+		log.Error(err)
 	}
 }
 
-func (sp *ServiceProxy) addTargetURL(targetURL string) {
-	sp.addServerMut.Lock()
-	sp.mapURL[targetURL] = targetURL
-	sp.addServerMut.Unlock()
+// Stop stop loadbalancer
+func (sp *ServiceProxy) Stop(ctx context.Context) {
+	if err := sp.server.Shutdown(ctx); err != nil {
+		log.Error(err)
+	}
 }
 
-// AddServer :nodoc:
-func (sp *ServiceProxy) AddServer(targetURL string) error {
+// AddService :nodoc:
+func (sp *ServiceProxy) AddService(targetURL string) error {
 	if _, ok := sp.mapURL[targetURL]; ok {
 		return errors.New("server url already added")
 	}
@@ -84,42 +81,33 @@ func (sp *ServiceProxy) AddServer(targetURL string) error {
 		return err
 	}
 
-	if ok := isServiceAlive(serviceURL); !ok {
+	if ok := dial(serviceURL); !ok {
 		return errors.New("cannot dial service")
 	}
 
 	sp.addTargetURL(targetURL)
-
-	proxy := httputil.NewSingleHostReverseProxy(serviceURL)
-	transport := &http.Transport{
-		DisableCompression:  true,
-		DisableKeepAlives:   false,
-		MaxIdleConns:        100,
-		MaxIdleConnsPerHost: 100,
-	}
-	proxy.Transport = transport
-
-	sp.services = append(sp.services, NewService(proxy, serviceURL))
-
+	sp.addService(serviceURL)
 	return nil
 }
 
-// getClientIP extracts the user IP address from req, if present.
-func getClientIP(req *http.Request) (net.IP, error) {
-	ip, _, err := net.SplitHostPort(req.RemoteAddr)
-	if err != nil {
-		return nil, fmt.Errorf("userip: %q is not IP:port", req.RemoteAddr)
+// RunHealthCheck run HealthCheck every 20 second
+func (sp *ServiceProxy) RunHealthCheck(sigInterrupt chan os.Signal) {
+	t := time.NewTicker(20 * time.Second)
+	for {
+		select {
+		case <-t.C:
+			log.Println("Starting health check...")
+			sp.checkHealth()
+			log.Println("Health check completed")
+		case <-sigInterrupt:
+			t.Stop()
+			return
+		}
 	}
-
-	userIP := net.ParseIP(ip)
-	if userIP == nil {
-		return nil, fmt.Errorf("userip: %q is not IP:port", req.RemoteAddr)
-	}
-	return userIP, nil
 }
 
-// HandleJoin :nodoc:
-func (sp *ServiceProxy) HandleJoin(w http.ResponseWriter, r *http.Request) {
+// handleJoin :nodoc:
+func (sp *ServiceProxy) handleJoin(w http.ResponseWriter, r *http.Request) {
 	ip, err := getClientIP(r)
 	if err != nil {
 		log.Fatal(err)
@@ -128,7 +116,7 @@ func (sp *ServiceProxy) HandleJoin(w http.ResponseWriter, r *http.Request) {
 	port := ":" + r.URL.Query().Get("port")
 
 	log.Println("requst join from host ", ip.String()+port)
-	if err := sp.AddServer("http://" + ip.String() + port); err != nil {
+	if err := sp.AddService("http://" + ip.String() + port); err != nil {
 		log.Error(err)
 		w.WriteHeader(http.StatusBadRequest)
 		resp, err := json.Marshal(map[string]interface{}{"error": err.Error()})
@@ -146,14 +134,59 @@ func (sp *ServiceProxy) HandleJoin(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("success join"))
 }
 
-func (sp *ServiceProxy) setCurrentService(val int) {
-	sp.currentServiceMut.Lock()
-	sp.currentService = val
-	sp.currentServiceMut.Unlock()
+// handleProxy :nodoc:
+func (sp *ServiceProxy) handleProxy(w http.ResponseWriter, r *http.Request) {
+	// if the same request routing for few attempts with different backends, increase the count
+	attempts := getRetryAttemptsFromCtx(r, _attemptsKey)
+	if attempts > 3 {
+		log.Infof("%s(%s) max attempts reached, terminating\n", r.RemoteAddr, r.URL.Path)
+		http.Error(w, "service not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	service := sp.findNextService()
+	if service == nil {
+		http.Error(w, "service not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	service.Proxy.ErrorHandler = sp.proxyErrorHandler(service)
+	service.Proxy.ServeHTTP(w, r)
 }
 
-// FindNextService find next alive service
-func (sp *ServiceProxy) FindNextService() *Service {
+func (sp *ServiceProxy) proxyErrorHandler(service *Service) func(w http.ResponseWriter, r *http.Request, err error) {
+	return func(w http.ResponseWriter, r *http.Request, err error) {
+		if err != nil {
+			log.Error(err)
+		}
+
+		retries := getRetryAttemptsFromCtx(r, _retryKey)
+		if retries < _maxRetries {
+			time.After(10 * time.Millisecond)
+			ctx := context.WithValue(r.Context(), _retryKey, retries+1)
+			service.Proxy.ServeHTTP(w, r.WithContext(ctx))
+			return
+		}
+
+		service.SetAlive(false)
+
+		// if the same request routing for few attempts with different service,
+		// increase the count
+		attempts := getRetryAttemptsFromCtx(r, _attemptsKey)
+		log.Infof("%s(%s) attempting retry %d\n", r.RemoteAddr, r.URL.Path, attempts)
+		service := sp.findNextService()
+		if service == nil {
+			http.Error(w, "service not available", http.StatusInternalServerError)
+			return
+		}
+
+		ctx := context.WithValue(r.Context(), _attemptsKey, attempts+1)
+		sp.handleProxy(w, r.WithContext(ctx))
+	}
+}
+
+// findNextService find next alive service
+func (sp *ServiceProxy) findNextService() *Service {
 	if len(sp.services) == 0 {
 		return nil
 	}
@@ -178,107 +211,77 @@ func (sp *ServiceProxy) FindNextService() *Service {
 	return nil
 }
 
-// Handler :nodoc:
-func (sp *ServiceProxy) Handler(w http.ResponseWriter, r *http.Request) {
-	// if the same request routing for few attempts with different backends, increase the count
-	attempts := getRetryAttemptsFromCtx(r, _Attempts)
-	if attempts > 3 {
-		log.Infof("%s(%s) max attempts reached, terminating\n", r.RemoteAddr, r.URL.Path)
-		http.Error(w, "service not available", http.StatusServiceUnavailable)
-		return
-	}
-
-	service := sp.FindNextService()
-	if service == nil {
-		http.Error(w, "service not available", http.StatusServiceUnavailable)
-		return
-	}
-
-	service.Proxy.ErrorHandler = sp.ProxyErrorHandler(service)
-	service.Proxy.ServeHTTP(w, r)
-}
-
-// ProxyErrorHandler :nodoc:
-func (sp *ServiceProxy) ProxyErrorHandler(service *Service) func(w http.ResponseWriter, r *http.Request, err error) {
-	return func(w http.ResponseWriter, r *http.Request, err error) {
-		if err != nil {
-			log.Error(err)
-		}
-
-		retries := getRetryAttemptsFromCtx(r, _Retry)
-		if retries < _MaxRetries {
-			select {
-			case <-time.After(10 * time.Millisecond):
-				ctx := context.WithValue(r.Context(), _Retry, retries+1)
-				service.Proxy.ServeHTTP(w, r.WithContext(ctx))
-			}
-
-			return
-		}
-
-		service.SetAlive(false)
-
-		// if the same request routing for few attempts with different backends, increase the count
-		attempts := getRetryAttemptsFromCtx(r, _Attempts)
-		log.Infof("%s(%s) attempting retry %d\n", r.RemoteAddr, r.URL.Path, attempts)
-		service := sp.FindNextService()
-		if service == nil {
-			http.Error(w, "service not available", http.StatusInternalServerError)
-			return
-		}
-
-		ctx := context.WithValue(r.Context(), _Attempts, attempts+1)
-		sp.Handler(w, r.WithContext(ctx))
-	}
-}
-
-// HealthCheck check services health status
+// checkHealth check services health status
 // mark service as alive if helathy
-func (sp *ServiceProxy) HealthCheck() {
-	for _, s := range sp.services {
+func (sp *ServiceProxy) checkHealth() {
+	for i := range sp.services {
+		alive := dial(sp.services[i].URL)
+		sp.services[i].SetAlive(alive)
 		status := "up"
-		alive := isServiceAlive(s.URL)
-		s.SetAlive(alive)
 		if !alive {
 			status = "down"
 		}
 
-		log.Infof("%s [%s]\n", s.URL, status)
+		log.Infof("%s [%s]\n", sp.services[i].URL, status)
 	}
 }
 
-// RunHealthCheck run HealthCheck every 20 second
-func (sp *ServiceProxy) RunHealthCheck(sigInterrupt chan os.Signal) {
-	t := time.NewTicker(20 * time.Second)
-	for {
-		select {
-		case <-t.C:
-			log.Println("Starting health check...")
-			sp.HealthCheck()
-			log.Println("Health check completed")
-		case <-sigInterrupt:
-			t.Stop()
-			break
-		}
+func (sp *ServiceProxy) setCurrentService(val int) {
+	sp.currentServiceMut.Lock()
+	sp.currentService = val
+	sp.currentServiceMut.Unlock()
+}
+
+func (sp *ServiceProxy) addTargetURL(targetURL string) {
+	sp.mapURLMut.Lock()
+	sp.mapURL[targetURL] = targetURL
+	sp.mapURLMut.Unlock()
+}
+
+func (sp *ServiceProxy) addService(serviceURL *url.URL) {
+	proxy := httputil.NewSingleHostReverseProxy(serviceURL)
+	proxy.Transport = &http.Transport{
+		DisableCompression:  true,
+		DisableKeepAlives:   false,
+		MaxIdleConns:        100,
+		MaxIdleConnsPerHost: 100,
 	}
+
+	sp.servicesMut.Lock()
+	sp.services = append(sp.services, NewService(proxy, serviceURL))
+	sp.servicesMut.Unlock()
+}
+
+// getClientIP extracts the user IP address from req, if present.
+func getClientIP(req *http.Request) (net.IP, error) {
+	ip, _, err := net.SplitHostPort(req.RemoteAddr)
+	if err != nil {
+		return nil, fmt.Errorf("userip: %q is not IP:port", req.RemoteAddr)
+	}
+
+	userIP := net.ParseIP(ip)
+	if userIP == nil {
+		return nil, fmt.Errorf("userip: %q is not IP:port", req.RemoteAddr)
+	}
+	return userIP, nil
 }
 
 func getRetryAttemptsFromCtx(r *http.Request, retyAttempKey key) int {
 	if val, ok := r.Context().Value(retyAttempKey).(int); ok {
 		return val
 	}
-
 	return 0
 }
 
-func isServiceAlive(u *url.URL) bool {
+// success dial means the service is alive
+func dial(u *url.URL) bool {
 	timeout := 2 * time.Second
 	conn, err := net.DialTimeout("tcp", u.Host, timeout)
 	if err != nil {
 		log.Println("Site unreachable, error: ", err)
 		return false
 	}
-	_ = conn.Close()
 
+	_ = conn.Close()
 	return true
 }
