@@ -22,8 +22,7 @@ const (
 	_attemptsKey key = 0
 	_retryKey    key = 1
 
-	_maxRetries int = 3
-	_MaxAttempt int = 3
+	_maxAttempt int = 3
 )
 
 // Proxy :nodoc:
@@ -108,7 +107,7 @@ func (sp *Proxy) RunHealthCheck(sigInterrupt chan os.Signal) {
 
 // handleJoin :nodoc:
 func (sp *Proxy) handleJoin(w http.ResponseWriter, r *http.Request) {
-	ip, err := getClientIP(r)
+	ip, err := extractIP(r)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -136,9 +135,9 @@ func (sp *Proxy) handleJoin(w http.ResponseWriter, r *http.Request) {
 
 // handleProxy :nodoc:
 func (sp *Proxy) handleProxy(w http.ResponseWriter, r *http.Request) {
-	// if the same request routing for few attempts with different backends, increase the count
-	attempts := getRetryAttemptsFromCtx(r, _attemptsKey)
-	if attempts > 3 {
+	// if the same request routed for few attempts with different service, increase the count
+	attempts := retryAttemptsFromCtx(r, _attemptsKey)
+	if attempts > _maxAttempt {
 		log.Infof("%s(%s) max attempts reached, terminating\n", r.RemoteAddr, r.URL.Path)
 		http.Error(w, "service not available", http.StatusServiceUnavailable)
 		return
@@ -160,10 +159,10 @@ func (sp *Proxy) proxyErrorHandler(service *Service) func(w http.ResponseWriter,
 			log.Error(err)
 		}
 
-		retries := getRetryAttemptsFromCtx(r, _retryKey)
-		if retries < _maxRetries {
+		attempt := retryAttemptsFromCtx(r, _retryKey)
+		if attempt < _maxAttempt {
 			time.After(10 * time.Millisecond)
-			ctx := context.WithValue(r.Context(), _retryKey, retries+1)
+			ctx := context.WithValue(r.Context(), _retryKey, attempt+1)
 			service.Proxy.ServeHTTP(w, r.WithContext(ctx))
 			return
 		}
@@ -172,7 +171,7 @@ func (sp *Proxy) proxyErrorHandler(service *Service) func(w http.ResponseWriter,
 
 		// if the same request routing for few attempts with different service,
 		// increase the count
-		attempts := getRetryAttemptsFromCtx(r, _attemptsKey)
+		attempts := retryAttemptsFromCtx(r, _attemptsKey)
 		log.Infof("%s(%s) attempting retry %d\n", r.RemoteAddr, r.URL.Path, attempts)
 		service := sp.findNextService()
 		if service == nil {
@@ -252,8 +251,8 @@ func (sp *Proxy) addService(serviceURL *url.URL) {
 	sp.servicesMut.Unlock()
 }
 
-// getClientIP extracts the user IP address from req, if present.
-func getClientIP(req *http.Request) (net.IP, error) {
+// extracts the user IP address from req, if present.
+func extractIP(req *http.Request) (net.IP, error) {
 	ip, _, err := net.SplitHostPort(req.RemoteAddr)
 	if err != nil {
 		return nil, fmt.Errorf("userip: %q is not IP:port", req.RemoteAddr)
@@ -266,7 +265,7 @@ func getClientIP(req *http.Request) (net.IP, error) {
 	return userIP, nil
 }
 
-func getRetryAttemptsFromCtx(r *http.Request, retyAttempKey key) int {
+func retryAttemptsFromCtx(r *http.Request, retyAttempKey key) int {
 	if val, ok := r.Context().Value(retyAttempKey).(int); ok {
 		return val
 	}
