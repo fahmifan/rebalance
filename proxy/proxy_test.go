@@ -24,7 +24,7 @@ func TestHandler(t *testing.T) {
 		fmt.Fprint(w, "Hello, client 3")
 	}))
 
-	sp := NewServiceProxy()
+	sp := NewProxy()
 	sp.AddService(up1.URL)
 	sp.AddService(up2.URL)
 	sp.AddService(up3.URL)
@@ -55,7 +55,7 @@ func TestHandler(t *testing.T) {
 
 func Benchmark4Upstream(b *testing.B) {
 	b.Run("200 microsecond/response", func(b *testing.B) {
-		sp := NewServiceProxy()
+		sp := NewProxy()
 		for i := 0; i < 4; i++ {
 			up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				time.Sleep(time.Microsecond * 200)
@@ -85,7 +85,7 @@ func Benchmark4Upstream(b *testing.B) {
 	})
 
 	b.Run("20 microsecond/response", func(b *testing.B) {
-		sp := NewServiceProxy()
+		sp := NewProxy()
 		for i := 0; i < 4; i++ {
 			up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				time.Sleep(time.Microsecond * 200)

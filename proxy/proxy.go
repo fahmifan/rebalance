@@ -40,8 +40,8 @@ type Proxy struct {
 	currentService    int
 }
 
-// NewServiceProxy ServiceProxy factory
-func NewServiceProxy() *Proxy {
+// NewProxy ServiceProxy factory
+func NewProxy() *Proxy {
 	return &Proxy{
 		services:          make([]*Service, 0),
 		mapURL:            make(map[string]string),
