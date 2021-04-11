@@ -1,9 +1,11 @@
 package main
 
 import (
-	"github.com/miun173/rebalance/cli"
+	"github.com/spf13/cobra"
 )
 
 func main() {
-	cli.Run()
+	rootCMD := &cobra.Command{}
+	rootCMD.AddCommand(proxyCMD(), joinCMD())
+	rootCMD.Execute()
 }

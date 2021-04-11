@@ -55,6 +55,7 @@ func (sp *Proxy) Start() {
 	m := &http.ServeMux{}
 	m.HandleFunc("/", sp.handleProxy)
 	m.HandleFunc("/rebalance/join", sp.handleJoin)
+	m.HandleFunc("/rebalance/local-join", sp.handleLocalJoin)
 
 	sp.server = &http.Server{Addr: ":9000", Handler: m}
 	if err := sp.server.ListenAndServe(); err != nil {
@@ -69,10 +70,12 @@ func (sp *Proxy) Stop(ctx context.Context) {
 	}
 }
 
+var errExists = errors.New("error already exists")
+
 // AddService :nodoc:
 func (sp *Proxy) AddService(targetURL string) error {
 	if _, ok := sp.mapURL[targetURL]; ok {
-		return errors.New("server url already added")
+		return errExists
 	}
 
 	serviceURL, err := url.Parse(targetURL)
@@ -115,7 +118,41 @@ func (sp *Proxy) handleJoin(w http.ResponseWriter, r *http.Request) {
 	port := ":" + r.URL.Query().Get("port")
 
 	log.Println("requst join from host ", ip.String()+port)
-	if err := sp.AddService("http://" + ip.String() + port); err != nil {
+	err = sp.AddService("http://" + ip.String() + port)
+	if err == errExists {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("already exists"))
+		return
+	}
+	if err != nil {
+		log.Error(err)
+		w.WriteHeader(http.StatusBadRequest)
+		resp, err := json.Marshal(map[string]interface{}{"error": err.Error()})
+		if err != nil {
+			log.Error(err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
+		w.Write(resp)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("success join"))
+}
+
+// handleLocalJoin :nodoc:
+func (sp *Proxy) handleLocalJoin(w http.ResponseWriter, r *http.Request) {
+	host := r.URL.Query().Get("host")
+	log.Println("requst join from host ", host)
+	err := sp.AddService(host)
+	if err == errExists {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("already exists"))
+		return
+	}
+	if err != nil {
 		log.Error(err)
 		w.WriteHeader(http.StatusBadRequest)
 		resp, err := json.Marshal(map[string]interface{}{"error": err.Error()})

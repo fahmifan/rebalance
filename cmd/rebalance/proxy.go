@@ -1,4 +1,4 @@
-package cli
+package main
 
 import (
 	"context"
@@ -15,40 +15,36 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var (
-	proxyCMD = &cobra.Command{
+func proxyCMD() *cobra.Command {
+	proxyCMD := &cobra.Command{
 		Use:   "proxy",
 		Short: "a reverse proxy",
-		Run:   runProxy,
+		Run: func(cmd *cobra.Command, args []string) {
+			sp := proxy.NewProxy()
+
+			signalCh := make(chan os.Signal, 1)
+			defer close(signalCh)
+			signal.Notify(signalCh, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
+
+			joinFromConfig(sp)
+			go sp.Start()
+			go sp.RunHealthCheck(signalCh)
+
+			fmt.Println("starting loadbalancer at :9000")
+			<-signalCh
+
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+
+			log.Println("stopping server ...")
+			sp.Stop(ctx)
+		},
 	}
-)
 
-func init() {
-	rootCMD.AddCommand(proxyCMD)
+	return proxyCMD
 }
 
-func runProxy(cmd *cobra.Command, args []string) {
-	sp := proxy.NewProxy()
-
-	signalCh := make(chan os.Signal, 1)
-	defer close(signalCh)
-	signal.Notify(signalCh, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
-
-	localJoinProxy(sp)
-	go sp.Start()
-	go sp.RunHealthCheck(signalCh)
-
-	fmt.Println("starting loadbalancer at :9000")
-	<-signalCh
-
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	log.Println("stopping server ...")
-	sp.Stop(ctx)
-}
-
-func localJoinProxy(sp *proxy.Proxy, urls ...string) {
+func joinFromConfig(sp *proxy.Proxy, urls ...string) {
 	_, err := os.Stat("config.json")
 	if os.IsNotExist(err) {
 		log.Info("config.json not found. Skipping local join")
