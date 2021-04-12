@@ -1,4 +1,4 @@
-module github.com/fahmifan173/rebalance
+module github.com/fahmifan/rebalance
 
 go 1.12
 

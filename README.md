@@ -1,4 +1,4 @@
-# Rebalance ![goreport](https://goreportcard.com/badge/github.com/fahmifan173/rebalance)
+# Rebalance ![goreport](https://goreportcard.com/badge/github.com/fahmifan/rebalance)
 
 Experimentation on server load balancing using Round Robin algorithm with self join.
 
@@ -54,7 +54,7 @@ make build
 ```
 goos: linux
 goarch: amd64
-pkg: github.com/fahmifan173/rebalance/proxy
+pkg: github.com/fahmifan/rebalance/proxy
 cpu: Intel(R) Core(TM) i5-5300U CPU @ 2.30GHz
 BenchmarkProxy/1_upstream-4                 4628            248533 ns/op           42164 B/op        109 allocs/op
 BenchmarkProxy/2_upstream-4                 4952            243464 ns/op           42160 B/op        109 allocs/op
@@ -65,5 +65,5 @@ BenchmarkProxy/6_upstream-4                 4791            252848 ns/op        
 BenchmarkProxy/7_upstream-4                 4732            245577 ns/op           42228 B/op        109 allocs/op
 BenchmarkProxy/8_upstream-4                 5017            233513 ns/op           42197 B/op        109 allocs/op
 PASS
-ok      github.com/fahmifan173/rebalance/proxy  13.459s
+ok      github.com/fahmifan/rebalance/proxy  13.459s
 ```

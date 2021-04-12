@@ -6,7 +6,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/fahmifan173/rebalance/sidecar"
+	"github.com/fahmifan/rebalance/sidecar"
 	"github.com/spf13/cobra"
 )
 

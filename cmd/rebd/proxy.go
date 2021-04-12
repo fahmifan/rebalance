@@ -10,7 +10,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/fahmifan173/rebalance/proxy"
+	"github.com/fahmifan/rebalance/proxy"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
