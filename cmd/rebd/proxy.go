@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -19,26 +20,33 @@ func proxyCMD() *cobra.Command {
 	proxyCMD := &cobra.Command{
 		Use:   "proxy",
 		Short: "run reverse proxy",
-		Run: func(cmd *cobra.Command, args []string) {
-			sp := proxy.NewProxy()
+	}
+	proxyCMD.Flags().Bool("enable-log-healthcheck", false, "--enable-log-healthcheck [bool]")
+	proxyCMD.Run = func(cmd *cobra.Command, args []string) {
+		enableLogHC := stringBool(cmd.Flag("enable-log-healthcheck").Value.String())
+		sp := proxy.NewProxy(
+			proxy.WithMaxRetry(3),
+			proxy.WithRetryTimeout(time.Second*10),
+			proxy.WithHealthCheckBeat(time.Second*5),
+			proxy.WithLogHealthCheck(enableLogHC),
+		)
 
-			signalCh := make(chan os.Signal, 1)
-			defer close(signalCh)
-			signal.Notify(signalCh, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
+		signalCh := make(chan os.Signal, 1)
+		defer close(signalCh)
+		signal.Notify(signalCh, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 
-			joinFromConfig(sp)
-			go sp.Start()
-			go sp.RunHealthCheck(signalCh)
+		joinFromConfig(sp)
+		go sp.Start()
+		go sp.RunHealthCheck(signalCh)
 
-			fmt.Println("starting loadbalancer at :9000")
-			<-signalCh
+		fmt.Println("starting loadbalancer at :9000")
+		<-signalCh
 
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer cancel()
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
 
-			log.Println("stopping server ...")
-			sp.Stop(ctx)
-		},
+		log.Println("stopping server ...")
+		sp.Stop(ctx)
 	}
 
 	return proxyCMD
@@ -75,4 +83,8 @@ func joinFromConfig(sp *proxy.Proxy, urls ...string) {
 
 		log.Infof("succes join %s", host)
 	}
+}
+
+func stringBool(s string) bool {
+	return strings.TrimSpace(s) == "true"
 }
