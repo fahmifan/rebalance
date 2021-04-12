@@ -27,6 +27,8 @@ const (
 
 // Proxy :nodoc:
 type Proxy struct {
+	disableStartupLog bool // disable log for Start on Stop use for testing
+
 	server *http.Server
 
 	servicesMut *sync.RWMutex
@@ -50,7 +52,7 @@ func NewProxy() *Proxy {
 	}
 }
 
-// Start round robin server :nodoc:
+// Start round robin server
 func (sp *Proxy) Start() {
 	m := &http.ServeMux{}
 	m.HandleFunc("/", sp.handleProxy)
@@ -59,14 +61,18 @@ func (sp *Proxy) Start() {
 
 	sp.server = &http.Server{Addr: ":9000", Handler: m}
 	if err := sp.server.ListenAndServe(); err != nil {
-		log.Error(err)
+		if !sp.disableStartupLog {
+			log.Error(err)
+		}
 	}
 }
 
 // Stop stop loadbalancer
 func (sp *Proxy) Stop(ctx context.Context) {
 	if err := sp.server.Shutdown(ctx); err != nil {
-		log.Error(err)
+		if !sp.disableStartupLog {
+			log.Error(err)
+		}
 	}
 }
 

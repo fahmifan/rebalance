@@ -36,11 +36,11 @@ func TestRoundRobin(t *testing.T) {
 }
 
 func assertRoundRobin(t *testing.T, url, expected string) {
-	r2, err := http.Get(url)
+	res, err := http.Get(url)
 	assert.NoError(t, err)
 
-	greeting, err := ioutil.ReadAll(r2.Body)
-	r2.Body.Close()
+	greeting, err := ioutil.ReadAll(res.Body)
+	res.Body.Close()
 
 	assert.NoError(t, err)
 	assert.Equal(t, expected, string(greeting))
@@ -56,6 +56,7 @@ func BenchmarkProxy(b *testing.B) {
 
 func runBench(b *testing.B, nupstream int) {
 	sp := NewProxy()
+	sp.disableStartupLog = true
 	go sp.Start()
 
 	for i := 0; i < nupstream; i++ {
