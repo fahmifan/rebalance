@@ -1,8 +1,10 @@
 package main
 
 import (
+	"fmt"
 	"io/ioutil"
 	"net/http"
+	"os"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -22,17 +24,20 @@ func joinCMD() *cobra.Command {
 		reqURL := "http://localhost:" + lbport + "/rebalance/local-join?host=" + host
 		resp, err := http.Get(reqURL)
 		if err != nil {
-			log.Fatal(err)
+			fmt.Println(err)
+			os.Exit(1)
 		}
 
 		body, err := ioutil.ReadAll(resp.Body)
 		if err != nil {
-			log.Fatal(err)
+			fmt.Println(err)
+			os.Exit(1)
 		}
 		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
-			log.Fatal(string(body))
+			fmt.Println(string(body))
+			os.Exit(1)
 		}
 
 		log.Println(string(body))
