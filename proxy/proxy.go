@@ -20,7 +20,6 @@ type key int
 
 const (
 	_attemptsKey key = 0
-	_retryKey    key = 1
 
 	_maxAttempt int = 3
 )
@@ -202,10 +201,10 @@ func (sp *Proxy) proxyErrorHandler(service *Service) func(w http.ResponseWriter,
 			log.Error(err)
 		}
 
-		attempt := retryAttemptsFromCtx(r, _retryKey)
+		attempt := retryAttemptsFromCtx(r, _attemptsKey)
 		if attempt < _maxAttempt {
 			time.After(10 * time.Millisecond)
-			ctx := context.WithValue(r.Context(), _retryKey, attempt+1)
+			ctx := context.WithValue(r.Context(), _attemptsKey, attempt+1)
 			service.Proxy.ServeHTTP(w, r.WithContext(ctx))
 			return
 		}
