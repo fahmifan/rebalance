@@ -1,116 +1,74 @@
 package proxy
 
 import (
+	"context"
 	"fmt"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 )
 
-func TestHandler(t *testing.T) {
-	up1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, "Hello, client 1")
-	}))
-
-	up2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, "Hello, client 2")
-	}))
-
-	up3 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, "Hello, client 3")
-	}))
+func TestRoundRobin(t *testing.T) {
+	handler := func(resp string) func(w http.ResponseWriter, r *http.Request) {
+		return func(w http.ResponseWriter, r *http.Request) {
+			fmt.Fprint(w, resp)
+		}
+	}
 
 	sp := NewProxy()
-	sp.AddService(up1.URL)
-	sp.AddService(up2.URL)
-	sp.AddService(up3.URL)
+
+	fruits := []string{"apple", "mango", "strawberry"}
+	for _, f := range fruits {
+		up := httptest.NewServer(http.HandlerFunc(handler(f)))
+		sp.AddService(up.URL)
+	}
 
 	ts := httptest.NewServer(http.HandlerFunc(sp.handleProxy))
 	defer ts.Close()
 
-	for i := 1; i <= 3; i++ {
-		res, err := http.Get(ts.URL)
-		assert.NoError(t, err)
-
-		greeting, err := ioutil.ReadAll(res.Body)
-		res.Body.Close()
-		assert.NoError(t, err)
-
-		assert.Equal(t, fmt.Sprintf("Hello, client %d", i), string(greeting))
-	}
-
-	res, err := http.Get(ts.URL)
-	assert.NoError(t, err)
-
-	greeting, err := ioutil.ReadAll(res.Body)
-	res.Body.Close()
-	assert.NoError(t, err)
-
-	assert.Equal(t, "Hello, client 1", string(greeting))
+	assertRoundRobin(t, ts.URL, fruits[0])
+	assertRoundRobin(t, ts.URL, fruits[1])
+	assertRoundRobin(t, ts.URL, fruits[2])
+	assertRoundRobin(t, ts.URL, fruits[0])
 }
 
-func Benchmark4Upstream(b *testing.B) {
-	b.Run("200 microsecond/response", func(b *testing.B) {
-		sp := NewProxy()
-		for i := 0; i < 4; i++ {
-			up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				time.Sleep(time.Microsecond * 200)
-				msg := fmt.Sprintf("Hello, client %d", i)
-				fmt.Fprint(w, msg)
-			}))
+func assertRoundRobin(t *testing.T, url, expected string) {
+	r2, err := http.Get(url)
+	assert.NoError(t, err)
 
-			sp.AddService(up.URL)
-		}
+	greeting, err := ioutil.ReadAll(r2.Body)
+	r2.Body.Close()
 
-		ts := httptest.NewServer(http.HandlerFunc(sp.handleProxy))
-		defer ts.Close()
+	assert.NoError(t, err)
+	assert.Equal(t, expected, string(greeting))
+}
 
-		b.Run("1000 req", func(b *testing.B) {
-			for i := 0; i < 1000; i++ {
-				res, _ := http.Get(ts.URL)
-				res.Body.Close()
-			}
+func BenchmarkProxy(b *testing.B) {
+	for i := 1; i <= 8; i++ {
+		b.Run(fmt.Sprintf("%d upstream", i), func(b *testing.B) {
+			runBench(b, i)
 		})
+	}
+}
 
-		b.Run("10000 req", func(b *testing.B) {
-			for i := 0; i < 10000; i++ {
-				res, _ := http.Get(ts.URL)
-				res.Body.Close()
-			}
-		})
-	})
+func runBench(b *testing.B, nupstream int) {
+	sp := NewProxy()
+	go sp.Start()
 
-	b.Run("20 microsecond/response", func(b *testing.B) {
-		sp := NewProxy()
-		for i := 0; i < 4; i++ {
-			up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				time.Sleep(time.Microsecond * 200)
-				msg := fmt.Sprintf("Hello, client %d", i)
-				fmt.Fprint(w, msg)
-			}))
+	for i := 0; i < nupstream; i++ {
+		up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Write(nil)
+		}))
+		sp.AddService(up.URL)
+	}
 
-			sp.AddService(up.URL)
-		}
+	for i := 0; i < b.N; i++ {
+		res, _ := http.Get("http://localhost:9000")
+		res.Body.Close()
+	}
 
-		ts := httptest.NewServer(http.HandlerFunc(sp.handleProxy))
-		defer ts.Close()
-
-		b.Run("1000 req", func(b *testing.B) {
-			for i := 0; i < 1000; i++ {
-				res, _ := http.Get(ts.URL)
-				res.Body.Close()
-			}
-		})
-
-		b.Run("10000 req", func(b *testing.B) {
-			for i := 0; i < 10000; i++ {
-				res, _ := http.Get(ts.URL)
-				res.Body.Close()
-			}
-		})
-	})
+	sp.Stop(context.TODO())
 }

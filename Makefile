@@ -1,21 +1,15 @@
-bench_cmd := go test -run=^$ github.com/miun173/rebalance/${package} -bench=.
-run_cmd := go run cmd/*
-
 test:
 	go test -v -covermode=atomic ./...
 
 run-proxy:
-	@$(run_cmd) proxy
-
-run-sidecar:
-	@$(run_cmd) sidecar join --url $(url) --service-ports $(service-ports)
+	@go run cmd/rebd/* proxy
 
 build:
-	go build -ldflags="-w -s" -o output/rebalance ./cmd/rebalance/...
-	go build -ldflags="-w -s" -o output/rebalance-client ./cmd/rebalance-client/...
+	go build -ldflags="-w -s" -o output/rebd ./cmd/rebd/...
+	go build -ldflags="-w -s" -o output/rebc ./cmd/rebc/...
 
 bench:
-	@cd proxy && $(bench_cmd)
+	@go test -benchmem -run=^$ -bench '^(BenchmarkProxy)$' github.com/fahmifan173/rebalance/proxy
 
 changelog:
 ifdef version
