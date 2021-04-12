@@ -16,5 +16,5 @@
 - add round robin reverse proxy
 
 
-[Unreleased]: https://github.com/miun173/rebalance/compare/v0.2.0...HEAD
-[v0.2.0]: https://github.com/miun173/rebalance/compare/v0.1.0...v0.2.0
+[Unreleased]: https://github.com/fahmifan173/rebalance/compare/v0.2.0...HEAD
+[v0.2.0]: https://github.com/fahmifan173/rebalance/compare/v0.1.0...v0.2.0
