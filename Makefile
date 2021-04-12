@@ -9,7 +9,7 @@ build:
 	go build -ldflags="-w -s" -o output/rebc ./cmd/rebc/...
 
 bench:
-	@go test -benchmem -run=^$ -bench '^(BenchmarkProxy)$' github.com/fahmifan173/rebalance/proxy
+	@go test -benchmem -bench . github.com/fahmifan173/rebalance/proxy
 
 changelog:
 ifdef version

@@ -56,14 +56,14 @@ goos: linux
 goarch: amd64
 pkg: github.com/fahmifan173/rebalance/proxy
 cpu: Intel(R) Core(TM) i5-5300U CPU @ 2.30GHz
-BenchmarkProxy/1_upstream-4                 4453            246196 ns/op           42159 B/op        109 allocs/op
-BenchmarkProxy/2_upstream-4                 4616            240572 ns/op           42157 B/op        109 allocs/op
-BenchmarkProxy/3_upstream-4                 4918            244510 ns/op           42172 B/op        109 allocs/op
-BenchmarkProxy/4_upstream-4                 4933            245854 ns/op           42196 B/op        109 allocs/op
-BenchmarkProxy/5_upstream-4                 4905            243645 ns/op           42231 B/op        109 allocs/op
-BenchmarkProxy/6_upstream-4                 4760            246456 ns/op           42252 B/op        109 allocs/op
-BenchmarkProxy/7_upstream-4                 4820            257239 ns/op           42230 B/op        109 allocs/op
-BenchmarkProxy/8_upstream-4                 4958            233508 ns/op           42200 B/op        109 allocs/op
+BenchmarkProxy/1_upstream-4                 4628            248533 ns/op           42164 B/op        109 allocs/op
+BenchmarkProxy/2_upstream-4                 4952            243464 ns/op           42160 B/op        109 allocs/op
+BenchmarkProxy/3_upstream-4                 4960            241166 ns/op           42174 B/op        109 allocs/op
+BenchmarkProxy/4_upstream-4                 4137            246276 ns/op           42201 B/op        109 allocs/op
+BenchmarkProxy/5_upstream-4                 4810            246440 ns/op           42226 B/op        109 allocs/op
+BenchmarkProxy/6_upstream-4                 4791            252848 ns/op           42265 B/op        109 allocs/op
+BenchmarkProxy/7_upstream-4                 4732            245577 ns/op           42228 B/op        109 allocs/op
+BenchmarkProxy/8_upstream-4                 5017            233513 ns/op           42197 B/op        109 allocs/op
 PASS
-ok      github.com/fahmifan173/rebalance/proxy  14.629s
+ok      github.com/fahmifan173/rebalance/proxy  13.459s
 ```
