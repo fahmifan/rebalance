@@ -21,14 +21,14 @@ func proxyCMD() *cobra.Command {
 		Use:   "proxy",
 		Short: "run reverse proxy",
 	}
-	proxyCMD.Flags().Bool("enable-log-healthcheck", false, "--enable-log-healthcheck [bool]")
+	proxyCMD.Flags().Bool("debug", false, "--debug [bool]")
 	proxyCMD.Run = func(cmd *cobra.Command, args []string) {
-		enableLogHC := stringBool(cmd.Flag("enable-log-healthcheck").Value.String())
+		debug := stringBool(cmd.Flag("debug").Value.String())
 		sp := proxy.NewProxy(
 			proxy.WithMaxRetry(3),
 			proxy.WithRetryTimeout(time.Second*10),
 			proxy.WithHealthCheckBeat(time.Second*5),
-			proxy.WithLogHealthCheck(enableLogHC),
+			proxy.WithDebug(debug),
 		)
 
 		signalCh := make(chan os.Signal, 1)

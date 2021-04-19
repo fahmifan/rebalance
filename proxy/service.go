@@ -11,6 +11,7 @@ import (
 type Service struct {
 	Proxy   *httputil.ReverseProxy
 	URL     *url.URL
+	URLStr  string
 	isAlive bool
 	mutex   *sync.RWMutex
 }
@@ -24,12 +25,13 @@ func WithTransport(t http.RoundTripper) serviceOpt {
 }
 
 // NewService :nodoc:
-func NewService(u *url.URL, opts ...serviceOpt) *Service {
+func NewService(u *url.URL, urlStr string, opts ...serviceOpt) *Service {
 	p := httputil.NewSingleHostReverseProxy(u)
 	s := &Service{
-		Proxy: p,
-		URL:   u,
-		mutex: &sync.RWMutex{},
+		Proxy:  p,
+		URL:    u,
+		mutex:  &sync.RWMutex{},
+		URLStr: urlStr,
 	}
 	for _, opt := range opts {
 		opt(s)

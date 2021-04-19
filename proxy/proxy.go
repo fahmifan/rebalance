@@ -30,7 +30,7 @@ type Proxy struct {
 	retryTimeout      time.Duration
 	disableStartupLog bool // disable log for Start on Stop use for testing
 
-	logHealthCheck  bool
+	debug           bool
 	healthCheckBeat time.Duration
 	server          *http.Server
 
@@ -66,9 +66,9 @@ func WithHealthCheckBeat(t time.Duration) option {
 	}
 }
 
-func WithLogHealthCheck(log bool) option {
+func WithDebug(debug bool) option {
 	return func(p *Proxy) {
-		p.logHealthCheck = log
+		p.debug = debug
 	}
 }
 
@@ -140,9 +140,9 @@ func (sp *Proxy) AddService(targetURL string) error {
 		MaxIdleConnsPerHost: 100,
 	}
 
-	sp.addTargetURL(targetURL)
-	service := NewService(serviceURL, WithTransport(transport))
+	service := NewService(serviceURL, targetURL, WithTransport(transport))
 	service.SetAlive(true)
+	sp.addTargetURL(targetURL)
 	sp.addService(service)
 
 	return nil
@@ -293,7 +293,7 @@ func (sp *Proxy) findNextService() *Service {
 // checkHealth check services health status
 // mark service as alive if helathy
 func (sp *Proxy) checkHealth() {
-	if sp.logHealthCheck {
+	if sp.debug {
 		log.Println("Starting health check...")
 	}
 
@@ -305,12 +305,12 @@ func (sp *Proxy) checkHealth() {
 			status = "down"
 		}
 
-		if sp.logHealthCheck {
+		if sp.debug {
 			log.Infof("%s [%s]\n", sp.services[i].URL, status)
 		}
 	}
 
-	if sp.logHealthCheck {
+	if sp.debug {
 		log.Println("Health check completed")
 	}
 }
